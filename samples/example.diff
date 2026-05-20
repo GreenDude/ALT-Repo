@@ -1,0 +1,12 @@
+diff --git a/app/example.py b/app/example.py
+index 1111111..2222222 100644
+--- a/app/example.py
++++ b/app/example.py
+@@ -1,4 +1,7 @@
+ def add(a, b):
+-    return a + b
++    if a is None:
++        return b
++    return a + b
++
++# TODO: add tests for None handling

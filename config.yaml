@@ -1,0 +1,22 @@
+llm:
+  provider: "lm_studio"
+  base_url: "http://localhost:1234/v1"
+  model: "gemma-3-4b-it"
+  temperature: 0.2
+  timeout_seconds: 120
+
+gitea:
+  base_url: "http://localhost:3000"
+  api_token_env: "GITEA_TOKEN"
+  webhook_secret_env: "GITEA_WEBHOOK_SECRET"
+  bot_marker: "<!-- local-ai-pr-reviewer -->"
+
+review:
+  max_diff_chars: 12000
+  output_report: "output/review.md"
+  prompt_template: "prompts/code_review.md"
+  mode: "general_pr_comment"
+
+safety:
+  local_only: true
+  redact_secrets: true
