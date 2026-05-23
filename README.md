@@ -1,4 +1,6 @@
-# local-ai-pr-reviewer
+# ALT-Repo
+
+Ever felt that we give too much control over our Open Source projects to AI-centric corporations? If the answer is yes, then I propose an alternative. `ALT-Repo` is an example of how to configure for a local version control service with an AI code review harness.
 
 `local-ai-pr-reviewer` is a local-first AI pull request review harness for Gitea. It receives pull request webhooks, fetches the PR diff from Gitea, sends the diff to a local OpenAI-compatible LLM server such as LM Studio, generates a concise markdown review, and posts that review back to the pull request as a general comment.
 
