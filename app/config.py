@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -50,8 +52,49 @@ class AppConfig(BaseModel):
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
 
 
+ENV_OVERRIDE_MAP: dict[str, tuple[str, ...]] = {
+    "LOCAL_AI_PR_REVIEWER_LLM_BASE_URL": ("llm", "base_url"),
+    "LOCAL_AI_PR_REVIEWER_LLM_MODEL": ("llm", "model"),
+    "LOCAL_AI_PR_REVIEWER_LLM_TEMPERATURE": ("llm", "temperature"),
+    "LOCAL_AI_PR_REVIEWER_LLM_TIMEOUT_SECONDS": ("llm", "timeout_seconds"),
+    "LOCAL_AI_PR_REVIEWER_GITEA_BASE_URL": ("gitea", "base_url"),
+    "LOCAL_AI_PR_REVIEWER_REVIEW_MAX_DIFF_CHARS": ("review", "max_diff_chars"),
+    "LOCAL_AI_PR_REVIEWER_SAFETY_LOCAL_ONLY": ("safety", "local_only"),
+}
+
+
+def _parse_env_override(raw_value: str) -> Any:
+    lowered = raw_value.strip().lower()
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+    if lowered.isdigit():
+        return int(lowered)
+    try:
+        return float(raw_value)
+    except ValueError:
+        return raw_value
+
+
+def _apply_env_overrides(payload: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(payload)
+    for env_name, path in ENV_OVERRIDE_MAP.items():
+        raw_value = os.getenv(env_name)
+        if raw_value is None:
+            continue
+        target = merged
+        for key in path[:-1]:
+            nested = target.get(key)
+            if not isinstance(nested, dict):
+                nested = {}
+                target[key] = nested
+            target = nested
+        target[path[-1]] = _parse_env_override(raw_value)
+    return merged
+
+
 def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
     path = Path(config_path)
     with path.open("r", encoding="utf-8") as handle:
         payload = yaml.safe_load(handle) or {}
+    payload = _apply_env_overrides(payload)
     return AppConfig.model_validate(payload)

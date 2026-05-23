@@ -82,3 +82,14 @@ def test_gitea_webhook_ignores_non_relevant_action(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ignored", "reason": "non_relevant_event"}
+
+
+def test_is_local_hostname_accepts_docker_local_hosts() -> None:
+    assert main_module._is_local_hostname("localhost") is True
+    assert main_module._is_local_hostname("host.docker.internal") is True
+    assert main_module._is_local_hostname("gitea") is True
+    assert main_module._is_local_hostname("192.168.1.15") is True
+
+
+def test_is_local_hostname_rejects_public_hosts() -> None:
+    assert main_module._is_local_hostname("api.openai.com") is False

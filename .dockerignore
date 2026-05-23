@@ -1,0 +1,13 @@
+.git
+.gitignore
+.idea
+.pytest_cache
+__pycache__
+.venv
+env
+venv
+gitea
+postgres
+output
+tests
+*.pyc
