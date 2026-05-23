@@ -1,8 +1,8 @@
 # ALT-Repo
 
-Ever felt that we give too much control over our Open Source projects to AI-centric corporations? If the answer is yes, then I propose an alternative. `ALT-Repo` is an example of how to configure for a local version control service with an AI code review harness.
+Ever felt that we give too much control over our open source projects to AI-centric corporations? If yes, this repo shows an alternative: a self-hosted Gitea setup paired with a local-first AI pull request review service.
 
-`local-ai-pr-reviewer` is a local-first AI pull request review harness for Gitea. It receives pull request webhooks, fetches the PR diff from Gitea, sends the diff to a local OpenAI-compatible LLM server such as LM Studio, generates a concise markdown review, and posts that review back to the pull request as a general comment.
+`local-ai-pr-reviewer` receives Gitea pull request webhooks, fetches the PR diff, sends that diff to a local OpenAI-compatible LLM server such as LM Studio, generates a concise markdown review, and posts the review back to the pull request as a general comment.
 
 ## Why local-first AI review is useful
 
@@ -35,14 +35,107 @@ local-ai-pr-reviewer/
 ├── output/
 ├── tests/
 ├── config.yaml
+├── docker-compose.yml
+├── Dockerfile
 ├── requirements.txt
 └── README.md
 ```
 
-## Setup instructions
+## Recommended setup: Docker first
 
-1. Use Python 3.12 or newer.
-2. Create a virtual environment and install dependencies:
+This is the recommended way to run the project. It starts:
+
+- PostgreSQL for Gitea
+- Gitea itself
+- the `local-ai-pr-reviewer` API service
+
+LM Studio is still expected to run on your host machine, with its OpenAI-compatible server enabled.
+
+### 1. Start LM Studio
+
+- Run LM Studio locally.
+- Load your chosen model, for example `gemma-3-4b-it`.
+- Enable the OpenAI-compatible server.
+- By default this project expects LM Studio at `http://localhost:1234/v1`.
+
+### 2. Export required secrets
+
+```bash
+export GITEA_TOKEN="your-gitea-token"
+export GITEA_WEBHOOK_SECRET="your-webhook-secret"
+```
+
+`GITEA_TOKEN` must belong to a user that can read pull requests and create PR comments in Gitea.
+
+### 3. Start the stack
+
+```bash
+docker compose up --build
+```
+
+This gives you:
+
+- Gitea at `http://localhost:3000`
+- the reviewer API at `http://localhost:8080`
+
+Inside Docker, the reviewer service uses:
+
+- `http://gitea:3000` for Gitea
+- `http://host.docker.internal:1234/v1` for LM Studio on the host
+
+### 4. Create the webhook in Gitea
+
+Configure a repository webhook that points to:
+
+```text
+http://localhost:8080/webhooks/gitea
+```
+
+Use the same secret value as `GITEA_WEBHOOK_SECRET` so the app can verify the `X-Gitea-Signature` header.
+
+The included `docker-compose.yml` already adds `local-ai-pr-reviewer` to Gitea's webhook allow-list.
+
+### 5. Verify the service
+
+Health check:
+
+```bash
+curl http://localhost:8080/health
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+### 6. Useful Docker commands
+
+Start in the background:
+
+```bash
+docker compose up -d --build
+```
+
+View logs:
+
+```bash
+docker compose logs -f local-ai-pr-reviewer
+```
+
+Stop everything:
+
+```bash
+docker compose down
+```
+
+## Local Python setup
+
+If you prefer to run the reviewer service directly on your machine instead of in Docker, use this path.
+
+### 1. Install dependencies
+
+Use Python 3.12 or newer.
 
 ```bash
 python -m venv .venv
@@ -50,62 +143,37 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-3. Review `config.yaml` and adjust local URLs or model name if needed.
-4. Export the required environment variables:
+### 2. Export required secrets
 
 ```bash
 export GITEA_TOKEN="your-gitea-token"
 export GITEA_WEBHOOK_SECRET="your-webhook-secret"
 ```
 
-## Docker setup
+### 3. Review config
 
-The project includes a `Dockerfile` and a Compose service for the Python app. In the default Compose setup:
+By default, `config.yaml` assumes:
 
-- Gitea stays reachable inside Docker as `http://gitea:3000`
-- LM Studio is expected on the host as `http://host.docker.internal:1234/v1`
-- the review service is exposed on `http://localhost:8080`
+- Gitea at `http://localhost:3000`
+- LM Studio at `http://localhost:1234/v1`
 
-Start the full stack with:
+You can keep those defaults or override them with environment variables.
 
-```bash
-docker compose up --build
-```
-
-If your local LLM server is not on `http://localhost:1234/v1`, override it with:
+### 4. Run the API locally
 
 ```bash
-export LOCAL_AI_PR_REVIEWER_LLM_BASE_URL="http://host.docker.internal:1234/v1"
-docker compose up --build
+uvicorn app.main:app --reload --port 8080
 ```
 
-The Compose file already sets Docker-friendly defaults for the Gitea and LLM base URLs, so you usually do not need to edit `config.yaml` just to run in containers.
+### 5. Verify locally
 
-## LM Studio setup assumptions
-
-- LM Studio is running locally.
-- Its OpenAI-compatible server is enabled.
-- For host-based runs, the configured endpoint is `http://localhost:1234/v1`.
-- For Docker Compose runs, the app uses `http://host.docker.internal:1234/v1`.
-- The configured model name matches the model loaded in LM Studio, for example `gemma-3-4b-it`.
-
-## Gitea token setup
-
-Create a Gitea API token with permission to read pull requests and create comments. The app reads the token from the environment variable named in `gitea.api_token_env`, which defaults to `GITEA_TOKEN`.
-
-## Webhook setup
-
-Configure a Gitea repository webhook that points to:
-
-```text
-http://localhost:8080/webhooks/gitea
+```bash
+curl http://localhost:8080/health
 ```
-
-Use the same secret value as `GITEA_WEBHOOK_SECRET` so the app can verify the `X-Gitea-Signature` header when the secret is configured.
-
-If you are creating the webhook from the Gitea containerized setup in this repo, `docker-compose.yml` already allows the `local-ai-pr-reviewer` host in Gitea's webhook allow-list.
 
 ## Manual CLI test
+
+The CLI mode is useful for prompt and model testing without sending a webhook.
 
 Run:
 
@@ -115,27 +183,17 @@ python -m app.main --diff samples/example.diff
 
 This loads the configured prompt, sends the sample diff to the local LLM, and writes the resulting markdown report to `output/review.md`.
 
-## API and webhook run command
+## LM Studio assumptions
 
-Run:
+- LM Studio is running locally.
+- Its OpenAI-compatible server is enabled.
+- For host-based runs, the default endpoint is `http://localhost:1234/v1`.
+- For Docker Compose runs, the app uses `http://host.docker.internal:1234/v1`.
+- The configured model name matches the model loaded in LM Studio, for example `gemma-3-4b-it`.
 
-```bash
-uvicorn app.main:app --reload --port 8080
-```
+## Gitea token setup
 
-Health check:
-
-```bash
-curl http://localhost:8080/health
-```
-
-## Testing
-
-Run:
-
-```bash
-pytest
-```
+Create a Gitea API token with permission to read pull requests and create comments. The app reads the token from the environment variable named in `gitea.api_token_env`, which defaults to `GITEA_TOKEN`.
 
 ## Configuration notes
 
@@ -148,6 +206,21 @@ pytest
 - `LOCAL_AI_PR_REVIEWER_LLM_TIMEOUT_SECONDS`
 - `LOCAL_AI_PR_REVIEWER_REVIEW_MAX_DIFF_CHARS`
 - `LOCAL_AI_PR_REVIEWER_SAFETY_LOCAL_ONLY`
+
+Examples:
+
+```bash
+export LOCAL_AI_PR_REVIEWER_LLM_BASE_URL="http://host.docker.internal:1234/v1"
+export LOCAL_AI_PR_REVIEWER_LLM_MODEL="gemma-3-4b-it"
+```
+
+## Testing
+
+Run:
+
+```bash
+pytest
+```
 
 ## Limitations
 
