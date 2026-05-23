@@ -23,9 +23,31 @@ services:
       - GITEA__database__NAME=gitea
       - GITEA__database__USER=gitea
       - GITEA__database__PASSWD=gitea_password
+      - GITEA__webhook__ALLOWED_HOST_LIST=local-ai-pr-reviewer,host.docker.internal,localhost,127.0.0.1
     ports:
       - "3000:3000"
       - "2222:22"
     volumes:
       - ./gitea:/data
+    restart: unless-stopped
+
+  local-ai-pr-reviewer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: local-ai-pr-reviewer
+    depends_on:
+      - gitea
+    environment:
+      - GITEA_TOKEN=${GITEA_TOKEN}
+      - GITEA_WEBHOOK_SECRET=${GITEA_WEBHOOK_SECRET}
+      - LOCAL_AI_PR_REVIEWER_GITEA_BASE_URL=http://gitea:3000
+      - LOCAL_AI_PR_REVIEWER_LLM_BASE_URL=http://host.docker.internal:1234/v1
+      - LOG_LEVEL=INFO
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./output:/app/output
     restart: unless-stopped
