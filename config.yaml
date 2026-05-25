@@ -1,9 +1,13 @@
 llm:
   provider: "lm_studio"
   base_url: "http://localhost:1234/v1"
-  model: "gemma-3-4b-it"
+  model: "google/gemma-4-e4b"
   temperature: 0.2
-  timeout_seconds: 120
+  connect_timeout_seconds: 10
+  read_timeout_seconds: 300
+  retry_count: 10
+  retry_backoff_base_seconds: 1.0
+  retry_backoff_max_seconds: 30.0
 
 gitea:
   base_url: "http://localhost:3000"
