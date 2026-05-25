@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 from fastapi.testclient import TestClient
@@ -42,22 +43,33 @@ def test_health_endpoint() -> None:
 def test_gitea_webhook_processes_relevant_pull_request(monkeypatch) -> None:
     fake_gitea = FakeGiteaClient()
     config = AppConfig()
+    captured_coroutines: list[object] = []
     payload = {
         "action": "opened",
         "repository": {"name": "demo", "owner": {"username": "octo"}},
         "pull_request": {"number": 7},
     }
 
+    def fake_create_task(coro):
+        captured_coroutines.append(coro)
+        return type("FakeTask", (), {"done": lambda self: False})()
+
     monkeypatch.setattr(main_module, "get_config", lambda: config)
     monkeypatch.setattr(main_module, "_verify_webhook_signature", lambda raw_body, request, cfg: None)
     monkeypatch.setattr(main_module, "_build_gitea_client", lambda cfg: fake_gitea)
     monkeypatch.setattr(main_module, "_build_review_service", lambda cfg: FakeReviewService())
+    monkeypatch.setattr(main_module.asyncio, "create_task", fake_create_task)
 
     client = TestClient(app)
     response = client.post("/webhooks/gitea", content=json.dumps(payload))
 
     assert response.status_code == 200
-    assert response.json()["status"] == "processed"
+    assert response.json()["status"] == "accepted"
+    assert not fake_gitea.posted_comments
+    assert len(captured_coroutines) == 1
+
+    asyncio.run(captured_coroutines[0])
+
     assert fake_gitea.posted_comments
     _, _, _, body = fake_gitea.posted_comments[0]
     assert body.startswith(config.gitea.bot_marker)

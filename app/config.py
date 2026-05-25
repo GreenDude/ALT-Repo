@@ -15,7 +15,11 @@ class LLMConfig(BaseModel):
     base_url: str = "http://localhost:1234/v1"
     model: str = "gemma-3-4b-it"
     temperature: float = 0.2
-    timeout_seconds: int = 120
+    connect_timeout_seconds: int = 10
+    read_timeout_seconds: int = 300
+    retry_count: int = 10
+    retry_backoff_base_seconds: float = 1.0
+    retry_backoff_max_seconds: float = 30.0
 
 
 class GiteaConfig(BaseModel):
@@ -56,7 +60,11 @@ ENV_OVERRIDE_MAP: dict[str, tuple[str, ...]] = {
     "LOCAL_AI_PR_REVIEWER_LLM_BASE_URL": ("llm", "base_url"),
     "LOCAL_AI_PR_REVIEWER_LLM_MODEL": ("llm", "model"),
     "LOCAL_AI_PR_REVIEWER_LLM_TEMPERATURE": ("llm", "temperature"),
-    "LOCAL_AI_PR_REVIEWER_LLM_TIMEOUT_SECONDS": ("llm", "timeout_seconds"),
+    "LOCAL_AI_PR_REVIEWER_LLM_CONNECT_TIMEOUT_SECONDS": ("llm", "connect_timeout_seconds"),
+    "LOCAL_AI_PR_REVIEWER_LLM_READ_TIMEOUT_SECONDS": ("llm", "read_timeout_seconds"),
+    "LOCAL_AI_PR_REVIEWER_LLM_RETRY_COUNT": ("llm", "retry_count"),
+    "LOCAL_AI_PR_REVIEWER_LLM_RETRY_BACKOFF_BASE_SECONDS": ("llm", "retry_backoff_base_seconds"),
+    "LOCAL_AI_PR_REVIEWER_LLM_RETRY_BACKOFF_MAX_SECONDS": ("llm", "retry_backoff_max_seconds"),
     "LOCAL_AI_PR_REVIEWER_GITEA_BASE_URL": ("gitea", "base_url"),
     "LOCAL_AI_PR_REVIEWER_REVIEW_MAX_DIFF_CHARS": ("review", "max_diff_chars"),
     "LOCAL_AI_PR_REVIEWER_SAFETY_LOCAL_ONLY": ("safety", "local_only"),

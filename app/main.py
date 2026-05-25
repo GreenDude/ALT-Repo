@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import hmac
 import ipaddress
@@ -128,6 +129,50 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+async def _process_gitea_review(config: AppConfig, pr_ref: PullRequestRef) -> None:
+    try:
+        gitea_client = _build_gitea_client(config)
+        review_service = _build_review_service(config)
+        diff_text = await gitea_client.fetch_pull_request_diff(pr_ref.owner, pr_ref.repo, pr_ref.index)
+        review = await review_service.review_diff(diff_text)
+
+        comment_body = f"{config.gitea.bot_marker}\n\n{review.markdown}"
+        comment_response = await gitea_client.post_general_comment(
+            pr_ref.owner,
+            pr_ref.repo,
+            pr_ref.index,
+            comment_body,
+        )
+        logger.info(
+            "Completed pull request review owner=%s repo=%s pr_index=%s comment_id=%s",
+            pr_ref.owner,
+            pr_ref.repo,
+            pr_ref.index,
+            comment_response.get("id"),
+        )
+    except GiteaClientError:
+        logger.exception(
+            "Background Gitea operation failed owner=%s repo=%s pr_index=%s",
+            pr_ref.owner,
+            pr_ref.repo,
+            pr_ref.index,
+        )
+    except LLMClientError:
+        logger.exception(
+            "Background LLM review generation failed owner=%s repo=%s pr_index=%s",
+            pr_ref.owner,
+            pr_ref.repo,
+            pr_ref.index,
+        )
+    except RuntimeError:
+        logger.exception(
+            "Background review pipeline failed owner=%s repo=%s pr_index=%s",
+            pr_ref.owner,
+            pr_ref.repo,
+            pr_ref.index,
+        )
+
+
 @app.post("/webhooks/gitea")
 async def gitea_webhook(request: Request) -> dict[str, Any]:
     config = get_config()
@@ -159,81 +204,23 @@ async def gitea_webhook(request: Request) -> dict[str, Any]:
 
     try:
         pr_ref = _extract_pr_ref(payload)
+        _build_gitea_client(config)
+        _build_review_service(config)
     except ValueError as exc:
         logger.exception("Failed to extract pull request reference from webhook payload")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    logger.info("Processing pull request review owner=%s repo=%s pr_index=%s", pr_ref.owner, pr_ref.repo, pr_ref.index)
-
-    try:
-        gitea_client = _build_gitea_client(config)
-        review_service = _build_review_service(config)
-        diff_text = await gitea_client.fetch_pull_request_diff(pr_ref.owner, pr_ref.repo, pr_ref.index)
-    except GiteaClientError as exc:
-        logger.exception(
-            "Gitea diff fetch failed owner=%s repo=%s pr_index=%s",
-            pr_ref.owner,
-            pr_ref.repo,
-            pr_ref.index,
-        )
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except RuntimeError as exc:
-        logger.exception(
-            "Webhook setup/runtime check failed owner=%s repo=%s pr_index=%s",
-            pr_ref.owner,
-            pr_ref.repo,
-            pr_ref.index,
-        )
+        logger.exception("Webhook setup/runtime check failed before queueing background review")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    try:
-        review = await review_service.review_diff(diff_text)
-    except LLMClientError as exc:
-        logger.exception(
-            "LLM review generation failed owner=%s repo=%s pr_index=%s",
-            pr_ref.owner,
-            pr_ref.repo,
-            pr_ref.index,
-        )
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        logger.exception(
-            "Review pipeline failed owner=%s repo=%s pr_index=%s",
-            pr_ref.owner,
-            pr_ref.repo,
-            pr_ref.index,
-        )
-        raise HTTPException(status_code=500, detail="Review pipeline failed") from exc
-
-    comment_body = f"{config.gitea.bot_marker}\n\n{review.markdown}"
-    try:
-        comment_response = await gitea_client.post_general_comment(
-            pr_ref.owner,
-            pr_ref.repo,
-            pr_ref.index,
-            comment_body,
-        )
-    except GiteaClientError as exc:
-        logger.exception(
-            "Posting PR comment failed owner=%s repo=%s pr_index=%s",
-            pr_ref.owner,
-            pr_ref.repo,
-            pr_ref.index,
-        )
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    logger.info(
-        "Completed pull request review owner=%s repo=%s pr_index=%s comment_id=%s",
-        pr_ref.owner,
-        pr_ref.repo,
-        pr_ref.index,
-        comment_response.get("id"),
-    )
+    logger.info("Queueing pull request review owner=%s repo=%s pr_index=%s", pr_ref.owner, pr_ref.repo, pr_ref.index)
+    asyncio.create_task(_process_gitea_review(config, pr_ref))
 
     return {
-        "status": "processed",
+        "status": "accepted",
         "owner": pr_ref.owner,
         "repo": pr_ref.repo,
         "pull_request_index": pr_ref.index,
-        "comment_id": comment_response.get("id"),
     }
 
 
