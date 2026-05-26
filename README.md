@@ -66,6 +66,18 @@ export GITEA_WEBHOOK_SECRET="your-webhook-secret"
 ```
 
 `GITEA_TOKEN` must belong to a user that can read pull requests and create PR comments in Gitea.
+For a Gitea personal access token, the minimum tested permissions in the token UI are:
+
+- `repository`: `Read`
+- `issue`: `Read and Write`
+- everything else: `No Access`
+
+These map to the API capabilities the reviewer needs:
+
+- `repository: Read` to fetch the pull request diff
+- `issue: Read and Write` to create the general PR comment
+
+Use the raw personal access token value here, not a full `Authorization` header string. The app tolerates `token ...` and `Bearer ...` prefixes, but the raw token is the intended input.
 
 ### 3. Start the stack
 
@@ -88,12 +100,16 @@ Inside Docker, the reviewer service uses:
 Configure a repository webhook that points to:
 
 ```text
-http://localhost:8080/webhooks/gitea
+http://local-ai-pr-reviewer:8080/webhooks/gitea
 ```
 
 Use the same secret value as `GITEA_WEBHOOK_SECRET` so the app can verify the `X-Gitea-Signature` header.
 
+Because Gitea runs inside Docker in this setup, the webhook must target the reviewer service by its Docker service name, not `localhost`.
+
 The included `docker-compose.yml` already adds `local-ai-pr-reviewer` to Gitea's webhook allow-list.
+
+If you are reusing the existing `./gitea` or `./postgres` data directories, previously created webhook URLs are preserved. Update the existing webhook or recreate it if it still points to an old host or port such as `:8300`.
 
 ### 5. Verify the service
 
@@ -193,7 +209,15 @@ This loads the configured prompt, sends the sample diff to the local LLM, and wr
 
 ## Gitea token setup
 
-Create a Gitea API token with permission to read pull requests and create comments. The app reads the token from the environment variable named in `gitea.api_token_env`, which defaults to `GITEA_TOKEN`.
+Create a Gitea API token with permission to read pull requests and create comments. In the Gitea permission picker, set `repository` to `Read` and `issue` to `Read and Write`; the remaining categories can stay `No Access`. The app reads the token from the environment variable named in `gitea.api_token_env`, which defaults to `GITEA_TOKEN`.
+
+If Gitea returns `401 Unauthorized`, the most common causes are:
+
+- the container was started before `GITEA_TOKEN` was exported or after the token changed
+- the token value includes extra whitespace or a copied header prefix
+- the token belongs to a different Gitea instance or user
+
+If Gitea returns `403 Forbidden` with a message about required scopes, regenerate the token with `issue` set to `Read and Write` and restart `local-ai-pr-reviewer`.
 
 ## Configuration notes
 

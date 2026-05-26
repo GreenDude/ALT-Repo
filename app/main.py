@@ -78,11 +78,25 @@ def _build_review_service(config: AppConfig) -> ReviewService:
     return ReviewService(config=config, llm_client=LLMClient(config.llm))
 
 
+def _normalize_gitea_token(raw_token: str) -> str:
+    token = raw_token.strip()
+    lowered = token.lower()
+    if lowered.startswith("token "):
+        return token[6:].strip()
+    if lowered.startswith("bearer "):
+        return token[7:].strip()
+    return token
+
+
 def _build_gitea_client(config: AppConfig) -> GiteaClient:
-    token = os.getenv(config.gitea.api_token_env)
-    if not token:
+    raw_token = os.getenv(config.gitea.api_token_env)
+    if not raw_token:
         logger.error("Missing required Gitea token environment variable env_name=%s", config.gitea.api_token_env)
         raise RuntimeError(f"Missing required environment variable: {config.gitea.api_token_env}")
+    token = _normalize_gitea_token(raw_token)
+    if not token:
+        logger.error("Gitea token environment variable is empty after normalization env_name=%s", config.gitea.api_token_env)
+        raise RuntimeError(f"Empty Gitea token in environment variable: {config.gitea.api_token_env}")
     return GiteaClient(config=config.gitea, api_token=token)
 
 

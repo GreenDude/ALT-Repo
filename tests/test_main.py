@@ -105,3 +105,12 @@ def test_is_local_hostname_accepts_docker_local_hosts() -> None:
 
 def test_is_local_hostname_rejects_public_hosts() -> None:
     assert main_module._is_local_hostname("api.openai.com") is False
+
+
+def test_normalize_gitea_token_strips_whitespace() -> None:
+    assert main_module._normalize_gitea_token("  abc123  \n") == "abc123"
+
+
+def test_normalize_gitea_token_accepts_prefixed_values() -> None:
+    assert main_module._normalize_gitea_token("token abc123") == "abc123"
+    assert main_module._normalize_gitea_token("Bearer abc123") == "abc123"
