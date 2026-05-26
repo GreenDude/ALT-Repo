@@ -129,10 +129,13 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-async def _process_gitea_review(config: AppConfig, pr_ref: PullRequestRef) -> None:
+async def _process_gitea_review(
+    config: AppConfig,
+    pr_ref: PullRequestRef,
+    gitea_client: GiteaClient,
+    review_service: ReviewService,
+) -> None:
     try:
-        gitea_client = _build_gitea_client(config)
-        review_service = _build_review_service(config)
         diff_text = await gitea_client.fetch_pull_request_diff(pr_ref.owner, pr_ref.repo, pr_ref.index)
         review = await review_service.review_diff(diff_text)
 
@@ -204,8 +207,8 @@ async def gitea_webhook(request: Request) -> dict[str, Any]:
 
     try:
         pr_ref = _extract_pr_ref(payload)
-        _build_gitea_client(config)
-        _build_review_service(config)
+        gitea_client = _build_gitea_client(config)
+        review_service = _build_review_service(config)
     except ValueError as exc:
         logger.exception("Failed to extract pull request reference from webhook payload")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -214,7 +217,7 @@ async def gitea_webhook(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     logger.info("Queueing pull request review owner=%s repo=%s pr_index=%s", pr_ref.owner, pr_ref.repo, pr_ref.index)
-    asyncio.create_task(_process_gitea_review(config, pr_ref))
+    asyncio.create_task(_process_gitea_review(config, pr_ref, gitea_client, review_service))
 
     return {
         "status": "accepted",
